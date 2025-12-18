@@ -1,5 +1,7 @@
-from sqlalchemy import create_engine
 from datetime import datetime, timezone
+from typing import Optional
+
+from sqlalchemy import create_engine
 from sqlalchemy.orm import Mapped, mapped_column, declarative_base, sessionmaker
 
 Base = declarative_base()
@@ -15,11 +17,11 @@ class SentEmail(Base):
     rut: Mapped[str] = mapped_column()
     to: Mapped[str] = mapped_column(nullable=True)
     status: Mapped[str] = mapped_column()
-    message_id: Mapped[str | None] = mapped_column(nullable=True)
-    error: Mapped[str | None] = mapped_column(nullable=True)
-    bounce_error: Mapped[str | None] = mapped_column(nullable=True)
-    update_error: Mapped[str | None] = mapped_column(nullable=True)
+    message_id: Mapped[Optional[str]] = mapped_column(nullable=True)
+    error: Mapped[Optional[str]] = mapped_column(nullable=True)
+    bounce_error: Mapped[Optional[str]] = mapped_column(nullable=True)
+    update_error: Mapped[Optional[str]] = mapped_column(nullable=True)
     sent_at: Mapped[datetime] = mapped_column(default=datetime.now(timezone.utc))
-    received_at: Mapped[datetime | None] = mapped_column(nullable=True)
-    opened_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    received_at: Mapped[Optional[datetime]] = mapped_column(nullable=True)
+    opened_at: Mapped[Optional[datetime]] = mapped_column(nullable=True)
     updated_at: Mapped[datetime] = mapped_column(nullable=True)

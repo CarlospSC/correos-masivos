@@ -2,11 +2,13 @@ from app.models import session, SentEmail, engine, Base
 
 from datetime import datetime, timezone
 from email.mime.application import MIMEApplication
+from email.mime.image import MIMEImage
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 import os
-import base64
 from pathlib import Path
+from typing import Optional
+
 from app.ses import ses_client
 
 from bs4 import BeautifulSoup
@@ -137,12 +139,12 @@ Base.metadata.create_all(engine)
 # RRHH_EMAIL_SUBJECT = "Asunto RRHH"
 # RRHH_EMAIL_FROM = "Nombre Remitente <correo@example.com>"
 # RRHH_EMAIL_REPLY_TO = "replyto@example.com"
-RRHH_EMAIL_SUBJECT = "Comunicado importante AlexIA"
+RRHH_EMAIL_SUBJECT = "Comunicado AlexIA (RRHH PRUEBA)"
 RRHH_EMAIL_FROM = "bewell Corredores de Seguros <info@somosbewell.cl>"
 RRHH_EMAIL_REPLY_TO = "csalinas@somosbewell.cl"
 
 RRHH_LIST_PATH = Path("rrhh_listado_correos_prueba.xlsx")
-RRHH_PDF_PATH = Path("comunicados_pdf/Comunicado a RR.HH.pdf")
+RRHH_IMAGE_PATH = Path("rrhh_email_image.jpg")
 RRHH_FOOTER_PATH = Path("logo-footer.png")
 
 
@@ -166,51 +168,47 @@ def load_rrhh_recipients(excel_path: Path) -> list[dict]:
     return recipients
 
 
-def build_rrhh_email_body(pdf_path: Path, footer_path: Path | None = None) -> str:
-    """
-    Convierte el PDF en un <object> embebido y agrega el footer como imagen.
-    Nota: algunos clientes de correo pueden no renderizar el PDF; ajusta según tus pruebas.
-    """
-    if not pdf_path.exists():
-        raise FileNotFoundError(f"No se encontró el PDF de RRHH: {pdf_path}")
-
-    pdf_b64 = base64.b64encode(pdf_path.read_bytes()).decode("ascii")
+def build_rrhh_email_body(
+    image_cid: str, footer_cid: Optional[str] = None
+) -> str:
+    """Genera el HTML del cuerpo, referenciando imágenes inline vía CID."""
     html_parts = [
         "<html>",
-        "<body style='margin:0;padding:0;font-family:Arial, sans-serif;'>",
-        "<p style='font-size:14px;color:#333333;'>Si no ves el contenido correctamente, descarga el PDF adjunto.</p>",
-        (
-            f"<object data='data:application/pdf;base64,{pdf_b64}' "
-            "type='application/pdf' width='100%' height='800px'>"
-            "Tu cliente de correo no soporta PDF embebido.</object>"
-        ),
+        "<body style='margin:0;padding:0;font-family:Arial, sans-serif;background-color:#ffffff;'>",
+        "<div style='max-width:800px;margin:0 auto;background:#ffffff;padding:16px;'>",
     ]
 
-    if footer_path and footer_path.exists():
-        footer_b64 = base64.b64encode(footer_path.read_bytes()).decode("ascii")
+    html_parts.append(
+        "<div style='margin-bottom:16px;'>"
+        f"<img src='cid:{image_cid}' alt='Comunicado RRHH' "
+        "style='width:100%;height:auto;display:block;' />"
+        "</div>"
+    )
+
+    if footer_cid:
         html_parts.append(
             "<div style='text-align:center;margin:24px 0;'>"
-            f"<img src='data:image/png;base64,{footer_b64}' alt='Footer' "
-            "style='max-width:320px;width:100%;height:auto;' />"
+            f"<img src='cid:{footer_cid}' alt='Footer' "
+            "style='max-width:500px;width:100%;height:auto;' />"
             "</div>"
         )
 
-    html_parts.append("</body></html>")
+    html_parts.append("</div></body></html>")
     return "".join(html_parts)
 
 
 def build_rrhh_plain_text() -> str:
     """Fallback mínimo cuando el cliente no soporta HTML/PDF embebido."""
     return (
-        "Este correo contiene información importante para RRHH en formato PDF. "
-        "Por favor abre el correo en un cliente compatible para visualizarlo."
+        "Este correo contiene información importante para RRHH en formato gráfico. "
+        "Por favor abre el correo en un cliente compatible para visualizarlo correctamente."
     )
 
 
 def send_rrhh_emails(
     excel_path: Path = RRHH_LIST_PATH,
-    pdf_path: Path = RRHH_PDF_PATH,
-    footer_path: Path | None = RRHH_FOOTER_PATH,
+    image_path: Path = RRHH_IMAGE_PATH,
+    footer_path: Optional[Path] = RRHH_FOOTER_PATH,
 ):
     """Envía el comunicado de RRHH usando la lista de nombre/correo indicada."""
     recipients = load_rrhh_recipients(excel_path)
@@ -218,22 +216,43 @@ def send_rrhh_emails(
         print("No se encontraron destinatarios RRHH.")
         return
 
-    html_body = build_rrhh_email_body(pdf_path, footer_path)
+    if not image_path.exists():
+        raise FileNotFoundError(f"No se encontró la imagen RRHH: {image_path}")
+
+    image_bytes = image_path.read_bytes()
+    footer_bytes = footer_path.read_bytes() if footer_path and footer_path.exists() else None
+    body_cid = "rrhh-body-image"
+    footer_cid = "rrhh-footer-image" if footer_bytes else None
+
+    html_body = build_rrhh_email_body(body_cid, footer_cid)
     plain_body = build_rrhh_plain_text()
 
     for recipient in tqdm(recipients, desc="Enviando RRHH"):
         email = recipient["Correo"]
         name = recipient.get("Nombre", "").strip()
         try:
-            msg = MIMEMultipart("alternative")
+            msg = MIMEMultipart("related")
             msg["Subject"] = RRHH_EMAIL_SUBJECT
             msg["From"] = RRHH_EMAIL_FROM
             msg["To"] = email
             msg["Reply-To"] = RRHH_EMAIL_REPLY_TO
 
+            alternative = MIMEMultipart("alternative")
             personalized_html = html_body.replace("{{nombre}}", name or "Equipo RRHH")
-            msg.attach(MIMEText(plain_body, "plain", "utf-8"))
-            msg.attach(MIMEText(personalized_html, "html", "utf-8"))
+            alternative.attach(MIMEText(plain_body, "plain", "utf-8"))
+            alternative.attach(MIMEText(personalized_html, "html", "utf-8"))
+            msg.attach(alternative)
+
+            img_part = MIMEImage(image_bytes)
+            img_part.add_header("Content-ID", f"<{body_cid}>")
+            img_part.add_header("Content-Disposition", "inline", filename=image_path.name)
+            msg.attach(img_part)
+
+            if footer_bytes:
+                footer_part = MIMEImage(footer_bytes)
+                footer_part.add_header("Content-ID", f"<{footer_cid}>")
+                footer_part.add_header("Content-Disposition", "inline", filename=footer_path.name)
+                msg.attach(footer_part)
 
             response = ses_client.send_raw_email(
                 Source=msg["From"],
