@@ -1,0 +1,113 @@
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Información sobre Pago Duplicado en tu Reembolso Médico</title>
+    <style>
+      @page {
+        margin-top: 100px;
+        margin-bottom: 60px;
+        @top-right {
+          content: element(header);
+          height: 100px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+        @bottom-center {
+          font-family: Arial, sans-serif;
+          content: "Página " counter(page) " de " counter(pages);
+          font-size: 14px;
+          color: #ddd;
+        }
+      }
+      header {
+        position: running(header);
+        margin-top: 32px;
+      }
+      body {
+        font-family: Arial, sans-serif;
+        margin: 16px;
+        line-height: 1.6;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 16px;
+        margin-bottom: 16px;
+        font-size: 12px;
+      }
+      th,
+      td {
+        border: 1px solid #ddd;
+        padding: 8px;
+        text-align: left;
+      }
+      th {
+        background-color: #f2f2f2;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <img src="./logo.png" style="max-height: 50px; widht: auto" />
+    </header>
+    <p style="text-align: right">Santiago, {{ current_date }}</p>
+    <p>Señor(a) {{fullname}}</p>
+    <p>Estimado(a),</p>
+    <p>
+      Por medio de la presente, le informamos que, según su caso, las siguientes
+      liquidaciones fueron procesadas en forma duplicada:
+    </p>
+    <table>
+      <thead>
+        <tr style="page-break-inside: avoid; break-inside: avoid">
+          <th>N° Documento</th>
+          <th>Fecha Liquidación</th>
+          <th>Estado</th>
+          <th>Pago</th>
+          <th>Prestación</th>
+          <th>Modalidad Reembolso</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for doc in documents %}
+        <tr style="page-break-inside: avoid; break-inside: avoid">
+          <td>{{doc.number}}</td>
+          <td>{{doc.date}}</td>
+          <td>{{doc.status}}</td>
+          <td>{{doc.payment}}</td>
+          <td>{{doc.service}}</td>
+          <td>{{doc.reimbursement_mode}}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <p>
+      <b>Nota:</b> Para revisar la tabla anterior, es importante que lo haga por
+      número de documento, ya que la sumatoria de los gastos del pago original
+      no necesariamente coincide con la sumatoria del pago duplicado. Esto se
+      debe a que el cálculo se realizó en dos fechas distintas y con un valor UF
+      diferente.
+    </p>
+    <p>
+      Si requiere validar el abono, lo podrá visualizar en la cuenta que tiene
+      registrada en Bienestar dentro de un plazo aproximado de 24 a 72 horas
+      posteriores a la fecha indicada en la tabla precedente.
+    </p>
+    <p>
+      Los pagos duplicados han sido imputados al tope de la prestación indicada
+      en el bienestar de Habitat.
+    </p>
+    <div style="page-break-inside: avoid; break-inside: avoid">
+      <p>
+        Finalmente, sobre los pagos duplicados indicados en la tabla, estos no
+        serán cobrados a usted.
+      </p>
+      <p>Atentamente,</p>
+      <img
+        src="./logo-footer.png"
+        style="max-width: 400px; height: auto; display: block"
+      />
+    </div>
+  </body>
+</html>
