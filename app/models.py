@@ -14,7 +14,11 @@ session = Session()
 class SentEmail(Base):
     __tablename__ = "sent_emails"
     id: Mapped[int] = mapped_column(primary_key=True)
-    rut: Mapped[str] = mapped_column()
+    segment: Mapped[str] = mapped_column()
+    rut: Mapped[Optional[str]] = mapped_column(nullable=True)
+    recipient_email: Mapped[Optional[str]] = mapped_column(nullable=True)
+    recipient_name: Mapped[Optional[str]] = mapped_column(nullable=True)
+    company: Mapped[Optional[str]] = mapped_column(nullable=True)
     to: Mapped[str] = mapped_column(nullable=True)
     status: Mapped[str] = mapped_column()
     message_id: Mapped[Optional[str]] = mapped_column(nullable=True)

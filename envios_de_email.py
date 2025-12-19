@@ -7,7 +7,6 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 import os
 from pathlib import Path
-from typing import Optional
 
 from app.ses import ses_client
 
@@ -65,10 +64,13 @@ Base.metadata.create_all(engine)
 #     try:
 #         with session.begin():
 #             existing = session.query(SentEmail).filter_by(rut=rut).first()
+#             # Aquí se está filtrando netamente por rut
 
 #             if existing is not None and str(existing.status) != "BOUNCED":
 #                 print(f"Email ya enviado a rut {rut}, saltando...")
 #                 continue
+#             # Está la duda de la funcionalidad de este elif, revisar seguramente se agregó porque ya estaban
+#             # los rut en la base de datos, debío haber quedado así para enviarle solo a los que rebotaron
 #             elif existing is None:
 #                 print(f"Email no enviado pero no encontrado en la base de datos el rut {rut}, saltando...")
 #                 continue
@@ -139,13 +141,12 @@ Base.metadata.create_all(engine)
 # RRHH_EMAIL_SUBJECT = "Asunto RRHH"
 # RRHH_EMAIL_FROM = "Nombre Remitente <correo@example.com>"
 # RRHH_EMAIL_REPLY_TO = "replyto@example.com"
-RRHH_EMAIL_SUBJECT = "Comunicado AlexIA (RRHH PRUEBA)"
+RRHH_EMAIL_SUBJECT = "Comunicado Alex-IA"
 RRHH_EMAIL_FROM = "bewell Corredores de Seguros <info@somosbewell.cl>"
-RRHH_EMAIL_REPLY_TO = "csalinas@somosbewell.cl"
+RRHH_EMAIL_REPLY_TO = "info@somosbewell.cl"
 
 RRHH_LIST_PATH = Path("rrhh_listado_correos_prueba.xlsx")
 RRHH_IMAGE_PATH = Path("rrhh_email_image.jpg")
-RRHH_FOOTER_PATH = Path("logo-footer.png")
 
 
 def load_rrhh_recipients(excel_path: Path) -> list[dict]:
@@ -168,9 +169,7 @@ def load_rrhh_recipients(excel_path: Path) -> list[dict]:
     return recipients
 
 
-def build_rrhh_email_body(
-    image_cid: str, footer_cid: Optional[str] = None
-) -> str:
+def build_rrhh_email_body(image_cid: str) -> str:
     """Genera el HTML del cuerpo, referenciando imágenes inline vía CID."""
     html_parts = [
         "<html>",
@@ -184,14 +183,6 @@ def build_rrhh_email_body(
         "style='width:100%;height:auto;display:block;' />"
         "</div>"
     )
-
-    if footer_cid:
-        html_parts.append(
-            "<div style='text-align:center;margin:24px 0;'>"
-            f"<img src='cid:{footer_cid}' alt='Footer' "
-            "style='max-width:500px;width:100%;height:auto;' />"
-            "</div>"
-        )
 
     html_parts.append("</div></body></html>")
     return "".join(html_parts)
@@ -208,7 +199,6 @@ def build_rrhh_plain_text() -> str:
 def send_rrhh_emails(
     excel_path: Path = RRHH_LIST_PATH,
     image_path: Path = RRHH_IMAGE_PATH,
-    footer_path: Optional[Path] = RRHH_FOOTER_PATH,
 ):
     """Envía el comunicado de RRHH usando la lista de nombre/correo indicada."""
     recipients = load_rrhh_recipients(excel_path)
@@ -220,11 +210,9 @@ def send_rrhh_emails(
         raise FileNotFoundError(f"No se encontró la imagen RRHH: {image_path}")
 
     image_bytes = image_path.read_bytes()
-    footer_bytes = footer_path.read_bytes() if footer_path and footer_path.exists() else None
     body_cid = "rrhh-body-image"
-    footer_cid = "rrhh-footer-image" if footer_bytes else None
 
-    html_body = build_rrhh_email_body(body_cid, footer_cid)
+    html_body = build_rrhh_email_body(body_cid)
     plain_body = build_rrhh_plain_text()
 
     for recipient in tqdm(recipients, desc="Enviando RRHH"):
@@ -247,12 +235,6 @@ def send_rrhh_emails(
             img_part.add_header("Content-ID", f"<{body_cid}>")
             img_part.add_header("Content-Disposition", "inline", filename=image_path.name)
             msg.attach(img_part)
-
-            if footer_bytes:
-                footer_part = MIMEImage(footer_bytes)
-                footer_part.add_header("Content-ID", f"<{footer_cid}>")
-                footer_part.add_header("Content-Disposition", "inline", filename=footer_path.name)
-                msg.attach(footer_part)
 
             response = ses_client.send_raw_email(
                 Source=msg["From"],
