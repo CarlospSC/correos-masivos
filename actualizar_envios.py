@@ -3,12 +3,19 @@ from datetime import datetime, timezone
 from tqdm import tqdm
 from app.ses import sesv2_client
 
+RRHH_SEGMENT = "rrhh-alexia-2025-01"
+
 
 with session.begin():
-    sent_emails = session.query(SentEmail).all()
+    sent_emails = session.query(SentEmail).filter_by(segment=RRHH_SEGMENT).all()
 
     # Revisar si chequear solamente los que tengan estado bounced o sent (esperar unos 10 minutos desde la ejecución de envios_de_email)
     for sent_email in tqdm(sent_emails, desc="Actualizando estado de emails"):
+        if sent_email.message_id is None:
+            sent_email.status = "ERROR"
+            sent_email.update_error = "MessageId faltante para actualizar estado."
+            sent_email.updated_at = datetime.now(timezone.utc)
+            continue
         try:
             response = sesv2_client.get_message_insights(
                 MessageId=sent_email.message_id
@@ -35,7 +42,7 @@ with session.begin():
             sent_email.update_error = None
             sent_email.updated_at = datetime.now(timezone.utc)
         except Exception as e:
-            print(f"Error actualizando email {sent_email.rut}: {e}")
+            print(f"Error actualizando email {sent_email.recipient_email}: {e}")
             sent_email.update_error = str(e)
             sent_email.updated_at = datetime.now(timezone.utc)
 

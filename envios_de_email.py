@@ -144,21 +144,28 @@ Base.metadata.create_all(engine)
 RRHH_EMAIL_SUBJECT = "Comunicado Alex-IA"
 RRHH_EMAIL_FROM = "bewell Corredores de Seguros <info@somosbewell.cl>"
 RRHH_EMAIL_REPLY_TO = "info@somosbewell.cl"
+RRHH_SEGMENT = "rrhh-alexia-2025-01"
 
-RRHH_LIST_PATH = Path("rrhh_listado_correos_prueba.xlsx")
+# RRHH_LIST_PATH = Path("rrhh_listado_correos_prueba.xlsx")
+RRHH_LIST_PATH = Path("rrhh_listado_correos.xlsx")
 RRHH_IMAGE_PATH = Path("rrhh_email_image.jpg")
 
 
 def load_rrhh_recipients(excel_path: Path) -> list[dict]:
-    """Lee el Excel con columnas Nombre y Correo y devuelve una lista limpia."""
+    """Lee el Excel con columna Correo (Nombre opcional) y devuelve una lista limpia."""
     if not excel_path.exists():
         raise FileNotFoundError(f"No se encontró el archivo RRHH: {excel_path}")
 
     df = pd.read_excel(excel_path)
-    expected = {"Nombre", "Correo"}
-    missing = expected - set(df.columns)
-    if missing:
-        raise ValueError(f"El Excel debe contener las columnas: {', '.join(expected)} (faltan {missing})")
+    if "Correo" not in df.columns:
+        if len(df.columns) == 1:
+            df = df.rename(columns={df.columns[0]: "Correo"})
+        else:
+            raise ValueError(
+                "El Excel debe contener la columna 'Correo' o una sola columna con los correos."
+            )
+    if "Nombre" not in df.columns:
+        df["Nombre"] = ""
 
     recipients = (
         df[["Nombre", "Correo"]]
@@ -218,6 +225,15 @@ def send_rrhh_emails(
     for recipient in tqdm(recipients, desc="Enviando RRHH"):
         email = recipient["Correo"]
         name = recipient.get("Nombre", "").strip()
+        with session.begin():
+            existing = (
+                session.query(SentEmail)
+                .filter_by(segment=RRHH_SEGMENT, recipient_email=email)
+                .first()
+            )
+            if existing is not None and existing.status == "SENT":
+                print(f"Email RRHH ya enviado a {email}, saltando...")
+                continue
         try:
             msg = MIMEMultipart("related")
             msg["Subject"] = RRHH_EMAIL_SUBJECT
@@ -244,8 +260,51 @@ def send_rrhh_emails(
             response_code = response["ResponseMetadata"]["HTTPStatusCode"]
             if response_code != 200:
                 raise Exception(f"ResponseMetadata HTTPStatusCode: {response_code}")
+            with session.begin():
+                if existing is not None:
+                    existing.recipient_email = email
+                    existing.recipient_name = name
+                    existing.to = msg["To"]
+                    existing.status = "SENT"
+                    existing.message_id = response["MessageId"]
+                    existing.error = None
+                    existing.bounce_error = None
+                    existing.update_error = None
+                    existing.sent_at = datetime.now(timezone.utc)
+                    existing.updated_at = datetime.now(timezone.utc)
+                else:
+                    sent_email = SentEmail(
+                        segment=RRHH_SEGMENT,
+                        recipient_email=email,
+                        recipient_name=name,
+                        to=msg["To"],
+                        status="SENT",
+                        message_id=response["MessageId"],
+                        sent_at=datetime.now(timezone.utc),
+                    )
+                    session.add(sent_email)
         except Exception as exc:
             print(f"Error enviando email RRHH a {email}: {exc}")
+            with session.begin():
+                if existing is not None:
+                    existing.status = "ERROR"
+                    existing.message_id = None
+                    existing.error = str(exc)
+                    existing.bounce_error = None
+                    existing.update_error = None
+                    existing.updated_at = datetime.now(timezone.utc)
+                else:
+                    sent_email = SentEmail(
+                        segment=RRHH_SEGMENT,
+                        recipient_email=email,
+                        recipient_name=name,
+                        to=None,
+                        status="ERROR",
+                        message_id=None,
+                        error=str(exc),
+                        updated_at=datetime.now(timezone.utc),
+                    )
+                    session.add(sent_email)
 
 
 # Para realizar una prueba manual descomenta la llamada siguiente.
